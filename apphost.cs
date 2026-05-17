@@ -4,4 +4,13 @@
 
 var builder = DistributedApplication.CreateBuilder(args);
 
+var postgres = builder.AddPostgres("postgres", imageTag: "18")
+    .WithDataVolume()
+    .AddDatabase("koh-tao-dev");
+
+var app = builder.AddBunApp("koh-tao", ".", "scripts/aspire-dev.ts")
+    .WithBunPackageInstallation()
+    .WithHttpEndpoint(port: 3000, env: "PORT")
+    .WaitFor(postgres);
+
 builder.Build().Run();
