@@ -11,17 +11,24 @@
     "test:integration": "bun test test/integration",
     "prisma:generate": "prisma generate",
     "prisma:migrate:dev": "prisma migrate dev",
-    "prisma:studio": "prisma studio"
+    "prisma:studio": "prisma studio",
+    "prisma:seed": "prisma db seed"
+  },
+  "prisma": {
+    "seed": "bun run prisma/seed.ts"
   },
   "dependencies": {
-    "@prisma/client": "^6.8.2",
     "@nuxtjs/tailwindcss": "^6.12.0",
+    "@prisma/adapter-pg": "^7.8.0",
+    "@prisma/client": "^7",
+    "@testcontainers/postgresql": "^11.14.0",
     "nuxt": "^4.0.0",
+    "pg": "^8.20.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {
-    "prisma": "^6.8.2",
-    "testcontainers": "^10.16.0",
+    "prisma": "^7",
+    "testcontainers": "^11.14.0",
     "typescript": "^5.6.3"
   },
   "packageManager": "bun@1.2.15"
