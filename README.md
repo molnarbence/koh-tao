@@ -5,16 +5,18 @@
 Prerequisites: [.NET SDK](https://dot.net) · [Docker](https://docker.com) · [Bun](https://bun.com)
 
 ```bash
-aspire run
+aspire start
 ```
 
-This starts the Aspire dashboard, a PostgreSQL 18 container, Prisma migrations, and the Nuxt dev server. The dashboard opens automatically at `http://localhost:15888`.
+Starts the Aspire dashboard, a PostgreSQL 18 container, Prisma schema sync, and the Nuxt dev server. To restart, run `aspire start` again — it stops the previous instance automatically.
 
-Seed the database with sample data (optional, run after first `aspire run`):
+Seed the database with sample data (optional, run after first `aspire start`):
 
 ```bash
 bun run prisma:seed
 ```
+
+To debug a resource: `aspire describe` → `aspire logs koh-tao` → `aspire otel logs koh-tao`
 
 ## Running Without Aspire
 
