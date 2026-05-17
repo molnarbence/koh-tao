@@ -1,0 +1,79 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Partner {
+  id          String             @id @default(cuid())
+  name        String
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  channels    IngestionChannel[]
+}
+
+model IngestionChannel {
+  id          String   @id @default(cuid())
+  partnerId   String
+  channelType String
+  isActive    Boolean  @default(false)
+  partner     Partner  @relation(fields: [partnerId], references: [id])
+}
+
+model MediationBlueprint {
+  id                 String   @id @default(cuid())
+  name               String
+  functionIdentifier String
+  parameterSchema    Json
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+model Ingestion {
+  id                              String   @id @default(cuid())
+  partnerId                       String
+  ingestionChannelId              String
+  billingPeriodStart              DateTime
+  status                          String
+  sourceType                      String
+  sourceObjectKey                 String?
+  sourceObjectVersionIdentifier   String?
+  originalFilename                String
+  createdAt                       DateTime @default(now())
+  updatedAt                       DateTime @updatedAt
+}
+
+model ProcessingExecution {
+  id           String   @id @default(cuid())
+  ingestionId  String
+  stage        String
+  status       String
+  startedAt    DateTime?
+  endedAt      DateTime?
+  errorSummary String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model BillingTransfer {
+  id                String   @id @default(cuid())
+  ingestionId       String
+  billingReference  String?
+  billingStatus     String
+  polledAt          DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+model AuditEvent {
+  id             String   @id @default(cuid())
+  targetType     String
+  targetId       String
+  eventType      String
+  actorType      String
+  actorId        String
+  payload        Json
+  createdAt      DateTime @default(now())
+}
