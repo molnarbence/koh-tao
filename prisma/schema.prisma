@@ -7,7 +7,7 @@ datasource db {
 }
 
 model Partner {
-  id          String             @id @default(cuid())
+  id          String             @id @default(uuid(7))
   name        String
   createdAt   DateTime           @default(now())
   updatedAt   DateTime           @updatedAt
@@ -16,7 +16,7 @@ model Partner {
 }
 
 model IngestionChannel {
-  id          String      @id @default(cuid())
+  id          String      @id @default(uuid(7))
   partnerId   String
   channelType String
   isActive    Boolean     @default(false)
@@ -25,7 +25,7 @@ model IngestionChannel {
 }
 
 model MediationBlueprint {
-  id                 String   @id @default(cuid())
+  id                 String   @id @default(uuid(7))
   name               String
   functionIdentifier String
   parameterSchema    Json
@@ -34,7 +34,7 @@ model MediationBlueprint {
 }
 
 model Ingestion {
-  id                            String               @id @default(cuid())
+  id                            String               @id @default(uuid(7))
   partnerId                     String
   ingestionChannelId            String
   billingPeriodStart            DateTime
@@ -55,7 +55,7 @@ model Ingestion {
 }
 
 model ProcessingExecution {
-  id           String    @id @default(cuid())
+  id           String    @id @default(uuid(7))
   ingestionId  String
   stage        String
   status       String
@@ -70,7 +70,7 @@ model ProcessingExecution {
 }
 
 model BillingTransfer {
-  id               String    @id @default(cuid())
+  id               String    @id @default(uuid(7))
   ingestionId      String
   billingReference String?
   billingStatus    String
@@ -83,7 +83,7 @@ model BillingTransfer {
 }
 
 model AuditEvent {
-  id         String   @id @default(cuid())
+  id         String   @id @default(uuid(7))
   targetType String
   targetId   String
   eventType  String
