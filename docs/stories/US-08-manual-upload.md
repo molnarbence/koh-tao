@@ -1,4 +1,4 @@
-# US-08 — As a commercial manager, I want to upload a dataset file for a partner and billing period via the web application, so that I can trigger the ingestion process when automated collection is unavailable
+# US-08 — As a commercial manager, I want to upload a dataset file for a partner and billing period via the web application, so that I can exercise the mediation layer early and validate the end-to-end ingestion flow before automated collection is available
 
 **Deliverable**: D1 — Manual upload
 **Epic**: Ingestion Creation & Reads
@@ -37,7 +37,7 @@ Implement `POST /api/ingestions/manual-uploads` to validate an uploaded file, cr
 **Out of scope**:
 - Non-web-app ingestion creation (US-14)
 - Billing period format validation beyond non-empty (keep simple)
-- Channel deactivation check — the API must verify the partner has an active manual-upload channel and reject with 422 if not
+- Channel lifecycle management (activating/deactivating channels) — the API checks for an active channel but does not manage channel state
 
 ## Request
 
@@ -111,6 +111,9 @@ Steps:
 - [ ] Ingestion is created in DB with status `waiting_for_mediation` before S3 write
 - [ ] S3 key is `manual-uploads/{ingestionId}/{originalFilename}`
 - [ ] Unsupported file type returns `422` with `code: "INVALID_FILE"`
+- [ ] Empty (zero-byte) file returns `422` with `code: "INVALID_FILE"`
+- [ ] Missing or empty `billingPeriod` field returns `422`
 - [ ] Partner with no active manual-upload channel returns `422` with `code: "CHANNEL_NOT_ACTIVE"`
+- [ ] Unauthenticated request returns `401`
 - [ ] `CreateManualUpload.ts` has no import from `server/infrastructure/`
 - [ ] Audit event recorded with actor and ingestion ID
