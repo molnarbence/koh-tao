@@ -1,4 +1,4 @@
-# US-10 — As an operator, I want a dedicated detail page for each ingestion, so that I can inspect source metadata, processing history, and take actions from a single place
+# US-10 — As an operator, I want a dedicated detail page for each ingestion, so that I can diagnose issues and take corrective action without leaving the context of the affected ingestion
 
 **Deliverable**: D1 — Manual upload
 **Epic**: Upload & Detail UI
@@ -79,3 +79,5 @@ Renders as `<a href="/api/ingestions/:id/files/:fileId/download">Download origin
 - [ ] After successful re-run, page data refreshes and new execution appears in history
 - [ ] `isStuck === true` shows a stuck badge in the header
 - [ ] Page renders correctly for ingestion with no executions yet (`status: "waiting_for_mediation"`)
+- [ ] Loading state is shown while fetching ingestion data
+- [ ] Unauthenticated user is redirected to the login page

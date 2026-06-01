@@ -1,4 +1,4 @@
-# US-09 — As an administrator, I want to view the full lifecycle detail of an ingestion including execution history and billing status, so that I can investigate processing failures and track end-to-end progress
+# US-09 — As an administrator, I want to view the full lifecycle detail of an ingestion including execution history and billing status, so that I can diagnose processing failures and confirm end-to-end progress without needing direct access to infrastructure
 
 **Deliverable**: D1 — Manual upload
 **Epic**: Ingestion Creation & Reads
@@ -102,3 +102,4 @@ Fetches ingestion + executions + billing transfer in one repository call.
 - [ ] Commercial manager response omits all raw technical fields
 - [ ] Unknown ingestion returns `404`
 - [ ] Commercial manager accessing unassigned-partner ingestion returns `403`
+- [ ] Unauthenticated request returns `401`

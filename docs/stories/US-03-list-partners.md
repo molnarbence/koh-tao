@@ -92,6 +92,7 @@ export async function listPartners(
 ## Acceptance Criteria
 
 - [ ] `GET /api/partners` returns `{ items: [...] }` for authenticated user
+- [ ] Administrator sees all partners
 - [ ] Commercial manager only sees partners from their JWT `partnerIds` claim
 - [ ] `?hasActiveManualUploadChannel=true` returns only partners with an active manual-upload channel
 - [ ] Unauthenticated request returns `401`

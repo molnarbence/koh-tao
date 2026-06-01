@@ -1,4 +1,4 @@
-# US-11 — As a commercial manager, I want a guided form to select a partner, enter a billing period, and upload a file, so that I can submit a manual ingestion without making errors
+# US-11 — As a commercial manager, I want a guided form to select a partner, enter a billing period, and upload a file, so that I can submit partner data correctly the first time without relying on engineering support
 
 **Deliverable**: D1 — Manual upload
 **Epic**: Upload & Detail UI
@@ -77,5 +77,7 @@ Map API error codes to user-friendly messages:
 - [ ] File drop zone accepts CSV and Excel, rejects other types client-side
 - [ ] Submit button disabled until all fields are valid
 - [ ] API error `CHANNEL_NOT_ACTIVE` displays the correct user message
+- [ ] API error `INVALID_FILE` displays the correct user message
+- [ ] Unexpected server errors (5xx) display a generic retry message
 - [ ] Loading spinner shown during upload
-- [ ] Page accessible via link from dashboard
+- [ ] Unauthenticated user is redirected to the login page

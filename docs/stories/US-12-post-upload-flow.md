@@ -1,4 +1,4 @@
-# US-12 — As a commercial manager, I want to be offered a clear next step after a successful upload, so that I can either monitor the new ingestion or immediately upload a file for another partner
+# US-12 — As a commercial manager, I want to be offered a clear next step after a successful upload, so that I can continue my upload workflow without losing track of submitted ingestions
 
 **Deliverable**: D1 — Manual upload
 **Epic**: Upload & Detail UI
