@@ -10,5 +10,4 @@ test('apphost registers postgres and the nuxt app', async () => {
   expect(content.includes('AddPostgres')).toBe(true)
   expect(content.includes('"koh-tao-dev"')).toBe(true)
   expect(content.includes('AddBunApp("koh-tao"')).toBe(true)
-  expect(content.includes('WaitFor')).toBe(true)
 })

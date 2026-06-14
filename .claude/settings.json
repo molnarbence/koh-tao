@@ -1,4 +1,28 @@
 {
+  "permissions": {
+    "allow": [
+      "Bash(git *)",
+      "Bash(bun *)",
+      "Bash(docker *)",
+      "Bash(open -a Docker)",
+      "Bash(dotnet *)",
+      "Bash(npm *)",
+      "Bash(npx *)",
+      "Bash(node *)",
+      "Read(//tmp/**)",
+      "Read(//usr/local/lib/**)",
+      "Read(//Users/bence/.bun/**)",
+      "Skill(superpowers:*)",
+      "Bash(aspire *)",
+      "Skill(playwright-cli)",
+      "Skill(playwright-cli:*)",
+      "Bash(playwright-cli *)",
+      "Read(//Users/bence/.claude/plugins/cache/claude-plugins-official/superpowers/5.1.0/skills/subagent-driven-development/**)"
+    ],
+    "additionalDirectories": [
+      "/tmp"
+    ]
+  },
   "hooks": {
     "PreToolUse": [
       {
@@ -21,29 +45,6 @@
           }
         ]
       }
-    ]
-  },
-  "permissions": {
-    "allow": [
-      "Bash(git *)",
-      "Bash(bun *)",
-      "Bash(docker *)",
-      "Bash(open -a Docker)",
-      "Bash(dotnet *)",
-      "Bash(npm *)",
-      "Bash(npx *)",
-      "Bash(node *)",
-      "Read(//tmp/**)",
-      "Read(//usr/local/lib/**)",
-      "Read(//Users/bence/.bun/**)",
-      "Skill(superpowers:*)",
-      "Bash(aspire *)",
-      "Skill(playwright-cli)",
-      "Skill(playwright-cli:*)",
-      "Bash(playwright-cli *)"
-    ],
-    "additionalDirectories": [
-      "/tmp"
     ]
   }
 }
