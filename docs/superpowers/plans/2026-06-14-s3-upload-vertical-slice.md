@@ -4,9 +4,9 @@
 
 **Goal:** Strip the Koh Tao app to its scaffolding and rebuild a single vertical slice that uploads a file to an S3 bucket (no auth, fixed prefix) and records an upload-history entry with a `pending → stored/failed` status.
 
-**Architecture:** DDD layering per the repo's `add-feature` rule — pure `domain/uploads`, an `application/uploads` layer that depends only on port interfaces, `infrastructure` implementations (AWS SDK + Prisma), and thin `api/uploads` routes that wire concretes. Local dev runs against a LocalStack S3 container added to the Aspire apphost; Postgres survives for the history table only.
+**Architecture:** DDD layering per the repo's `add-feature` rule — pure `domain/uploads`, an `application/uploads` layer that depends only on port interfaces, `infrastructure` implementations (Bun's native S3 client + Prisma), and thin `api/uploads` routes that wire concretes. Local dev runs against a LocalStack S3 container added to the Aspire apphost; Postgres survives for the history table only.
 
-**Tech Stack:** Nuxt 4, Bun (test runner + runtime), Prisma 7 (+ `@prisma/adapter-pg`), PostgreSQL 18, `@aws-sdk/client-s3`, LocalStack, Aspire, Tailwind, Zod, `bun:test`, testcontainers.
+**Tech Stack:** Nuxt 4, Bun (test runner + runtime + built-in `S3Client`), Prisma 7 (+ `@prisma/adapter-pg`), PostgreSQL 18, LocalStack, Aspire, Tailwind, Zod, `bun:test`, testcontainers. No `@aws-sdk/*` dependency — S3 access uses Bun's built-in client.
 
 **Spec:** `docs/superpowers/specs/2026-06-14-s3-upload-vertical-slice-design.md`
 
@@ -14,7 +14,7 @@
 - Tests use `bun:test` (`import { expect, test } from 'bun:test'`).
 - Run a single test file with `bun test <path>`; unit suite is `bun run test:unit`.
 - IDs are generated with `Bun.randomUUIDv7()` (this repo runs on Bun everywhere).
-- Application services receive dependencies as parameters typed to interfaces — never import `server/infrastructure/*` from `server/application/*`, never import `@prisma/client` or AWS SDK from `server/domain/*`.
+- Application services receive dependencies as parameters typed to interfaces — never import `server/infrastructure/*` from `server/application/*`, never import `@prisma/client` or Bun's `S3Client` from `server/domain/*`.
 
 ---
 
@@ -40,16 +40,16 @@
 - `test/integration/uploads/upload-flow.test.ts`
 
 **Modified:**
-- `server/infrastructure/storage/S3Storage.ts` — replace stub with real AWS SDK impl
+- `server/infrastructure/storage/S3Storage.ts` — replace stub with Bun `S3Client` impl
 - `prisma/schema.prisma` — collapse to a single `Upload` model
 - `prisma/seed.ts` — empty it
 - `nuxt.config.ts` — drop Auth0, add S3 runtime config
 - `.env.example` — drop Auth0, document S3 vars
 - `apphost.cs` — add LocalStack container + env wiring
+- `scripts/aspire-dev.ts` — provision the dev S3 bucket before `nuxt dev`
 - `app.vue` — nav + main wrapper
 - `pages/index.vue` — upload page
 - `test/smoke/env-example.test.ts` — assert new vars
-- `package.json` — `@aws-sdk/client-s3` dependency (via `bun add`)
 
 **Deleted:** see Task 1.
 
@@ -560,23 +560,21 @@ git commit -m "feat: add listUploads use case"
 
 ---
 
-## Task 7: Infrastructure — S3Storage (AWS SDK)
+## Task 7: Infrastructure — S3Storage (Bun's native S3 client)
 
 **Files:**
 - Modify: `server/infrastructure/storage/S3Storage.ts`
-- Modify: `package.json` (via `bun add`)
 
-- [ ] **Step 1: Add the AWS SDK dependency**
+No new dependency: Bun ships an S3 client in the runtime (`import { S3Client } from 'bun'`).
+Bun's S3 client does object operations only — it has **no bucket-creation API**, so this
+class only writes objects; the bucket is provisioned in Task 14 (dev) and Task 13 (test).
 
-Run: `bun add @aws-sdk/client-s3`
-Expected: adds `@aws-sdk/client-s3` to `dependencies` and updates `bun.lock`.
-
-- [ ] **Step 2: Replace the stub with a real implementation**
+- [ ] **Step 1: Replace the stub with a Bun S3 implementation**
 
 Overwrite `server/infrastructure/storage/S3Storage.ts`:
 
 ```ts
-import { S3Client, PutObjectCommand, CreateBucketCommand } from '@aws-sdk/client-s3'
+import { S3Client } from 'bun'
 import type { IUploadStorage } from '../../application/uploads/ports'
 
 export type S3StorageConfig = {
@@ -589,59 +587,34 @@ export type S3StorageConfig = {
 
 export class S3Storage implements IUploadStorage {
   private readonly client: S3Client
-  private readonly bucket: string
-  private bucketEnsured = false
 
   constructor(config: S3StorageConfig) {
-    this.bucket = config.bucket
     this.client = new S3Client({
       region: config.region,
       endpoint: config.endpoint || undefined,
-      forcePathStyle: Boolean(config.endpoint),
-      credentials: {
-        accessKeyId: config.accessKeyId,
-        secretAccessKey: config.secretAccessKey
-      }
+      bucket: config.bucket,
+      accessKeyId: config.accessKeyId,
+      secretAccessKey: config.secretAccessKey
+      // virtualHostedStyle left default (false) → path-style, required by LocalStack
     })
   }
 
-  private async ensureBucket() {
-    if (this.bucketEnsured) return
-    try {
-      await this.client.send(new CreateBucketCommand({ Bucket: this.bucket }))
-    } catch (error) {
-      const name = (error as { name?: string }).name
-      if (name !== 'BucketAlreadyOwnedByYou' && name !== 'BucketAlreadyExists') {
-        throw error
-      }
-    }
-    this.bucketEnsured = true
-  }
-
   async putObject(input: { key: string; body: ArrayBuffer; contentType?: string }) {
-    await this.ensureBucket()
-    await this.client.send(
-      new PutObjectCommand({
-        Bucket: this.bucket,
-        Key: input.key,
-        Body: new Uint8Array(input.body),
-        ContentType: input.contentType
-      })
-    )
+    await this.client.write(input.key, new Uint8Array(input.body), { type: input.contentType })
   }
 }
 ```
 
-- [ ] **Step 3: Type-check the file**
+- [ ] **Step 2: Type-check the file**
 
 Run: `bunx tsc --noEmit`
-Expected: no errors referencing `S3Storage.ts`. (Pre-existing unrelated errors, if any, are acceptable — confirm none mention `S3Storage`.)
+Expected: no errors referencing `S3Storage.ts`. (`S3Client` types come from `bun-types`. Pre-existing unrelated errors, if any, are acceptable — confirm none mention `S3Storage`.)
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 3: Commit**
 
 ```bash
-git add package.json bun.lock server/infrastructure/storage/S3Storage.ts
-git commit -m "feat: implement S3Storage with AWS SDK and lazy bucket creation"
+git add server/infrastructure/storage/S3Storage.ts
+git commit -m "feat: implement S3Storage with Bun's native S3 client"
 ```
 
 ---
@@ -1119,9 +1092,8 @@ Create `test/integration/uploads/upload-flow.test.ts`:
 
 ```ts
 import { afterAll, beforeAll, expect, test } from 'bun:test'
-import { $ } from 'bun'
+import { $, S3Client } from 'bun'
 import { GenericContainer, Wait, type StartedTestContainer } from 'testcontainers'
-import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3'
 
 let postgres: StartedTestContainer
 let localstack: StartedTestContainer
@@ -1147,6 +1119,9 @@ beforeAll(async () => {
 
   process.env.DATABASE_URL = dbUrl
   await $`prisma db push --skip-generate`.env({ ...process.env, DATABASE_URL: dbUrl })
+
+  // create the bucket — Bun's S3 client cannot, so use an idempotent path-style PUT
+  await fetch(`${s3Endpoint}/${bucket}`, { method: 'PUT' })
 }, 180000)
 
 afterAll(async () => {
@@ -1177,15 +1152,15 @@ test('upload stores the object and records a stored history row', async () => {
 
   expect(upload.status).toBe('stored')
 
-  // object physically exists in the bucket
+  // object physically exists in the bucket (read it back via Bun's S3 client)
   const client = new S3Client({
     region: 'eu-west-1',
     endpoint: s3Endpoint,
-    forcePathStyle: true,
-    credentials: { accessKeyId: 'test', secretAccessKey: 'test' }
+    bucket,
+    accessKeyId: 'test',
+    secretAccessKey: 'test'
   })
-  const object = await client.send(new GetObjectCommand({ Bucket: bucket, Key: upload.objectKey }))
-  expect(await object.Body!.transformToString()).toBe('a,b,c')
+  expect(await client.file(upload.objectKey).text()).toBe('a,b,c')
 
   // history reflects the stored row
   const history = await listUploads(repo)
@@ -1207,12 +1182,34 @@ git commit -m "test: add S3 upload integration flow"
 
 ---
 
-## Task 14: Aspire — LocalStack container + env wiring
+## Task 14: Aspire — LocalStack container + dev bucket bootstrap
 
 **Files:**
 - Modify: `apphost.cs`
+- Modify: `scripts/aspire-dev.ts`
 
-- [ ] **Step 1: Wire LocalStack into the apphost**
+- [ ] **Step 1: Provision the dev bucket in the dev bootstrap script**
+
+Overwrite `scripts/aspire-dev.ts`:
+
+```ts
+import { $ } from 'bun'
+
+await $`bun run prisma:generate`
+await $`prisma db push`
+
+// Bun's S3 client cannot create buckets; provision the LocalStack bucket here.
+// Idempotent path-style PUT — only when an S3 endpoint is configured (dev/LocalStack).
+const endpoint = process.env.NUXT_S3_ENDPOINT
+const bucket = process.env.NUXT_S3_BUCKET
+if (endpoint && bucket) {
+  await fetch(`${endpoint}/${bucket}`, { method: 'PUT' }).catch(() => {})
+}
+
+await $`nuxt dev`
+```
+
+- [ ] **Step 2: Wire LocalStack into the apphost**
 
 Overwrite `apphost.cs`:
 
@@ -1248,23 +1245,23 @@ var app = builder.AddBunApp("koh-tao", ".", "scripts/aspire-dev.ts")
 builder.Build().Run();
 ```
 
-- [ ] **Step 2: Confirm the apphost smoke test still passes**
+- [ ] **Step 3: Confirm the apphost smoke test still passes**
 
 Run: `bun test test/smoke/aspire-apphost.test.ts`
 Expected: PASS — file contains `AddPostgres`, `"koh-tao-dev"`, `AddBunApp("koh-tao"`, and `WaitFor`.
 
-- [ ] **Step 3: Manual verification (Docker required)**
+- [ ] **Step 4: Manual verification (Docker required)**
 
 Run: `aspire start`
-Then in the dashboard confirm `postgres`, `localstack`, and `koh-tao` all reach a running state. Visit the app (`http://localhost:3000`), upload a file on the Upload page, then open History and confirm a `stored` row appears. (The bucket is created lazily by `S3Storage` on first upload.)
+Then in the dashboard confirm `postgres`, `localstack`, and `koh-tao` all reach a running state. Visit the app (`http://localhost:3000`), upload a file on the Upload page, then open History and confirm a `stored` row appears. (The bucket is provisioned by `scripts/aspire-dev.ts` during startup, before `nuxt dev`.)
 
-> If `aspire start` is unavailable in the execution environment, skip Step 3 and note it for the user to verify manually — the integration test in Task 13 already proves the storage + persistence path end-to-end.
+> If `aspire start` is unavailable in the execution environment, skip Step 4 and note it for the user to verify manually — the integration test in Task 13 already proves the storage + persistence path end-to-end.
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
-git add apphost.cs
-git commit -m "feat: add LocalStack S3 container to Aspire apphost"
+git add apphost.cs scripts/aspire-dev.ts
+git commit -m "feat: add LocalStack S3 container and dev bucket bootstrap"
 ```
 
 ---
@@ -1305,4 +1302,5 @@ git commit -m "chore: verify upload slice test suite" --allow-empty
 - **Bun runtime:** `Bun.randomUUIDv7()` is used for IDs; the app runs on Bun in dev (Aspire `AddBunApp`) and tests run under `bun:test`. If a future production target uses Node, swap to a uuidv7 library.
 - **`test:unit` script scope:** the script is `bun test test/domain test/smoke`. Application unit tests live in `test/application` and are run explicitly (Task 15 Step 2). If you prefer them in the default unit run, widen the `test:unit` script to include `test/application` — optional, not required by the spec.
 - **LocalStack endpoint from a host process:** the Bun app runs as a host process (not a container), so `localstack.GetEndpoint("edge")` must resolve to a host-reachable URL. Verified manually in Task 14 Step 3.
-- **`forcePathStyle`** is enabled whenever a custom endpoint is set (LocalStack/MinIO require path-style addressing); real AWS uses virtual-hosted style with an empty endpoint.
+- **Path-style addressing:** Bun's `S3Client` defaults to path-style (`virtualHostedStyle` off), which LocalStack requires, so the plan leaves the option unset. For real AWS, set an empty endpoint; if a future S3-compatible target needs virtual-hosted addressing, pass `virtualHostedStyle: true`.
+- **Bucket provisioning:** Bun's S3 client has no bucket-management API. The dev bucket is created in `scripts/aspire-dev.ts` and the test bucket in the integration test's `beforeAll`, both via an idempotent `PUT ${endpoint}/${bucket}`. Production buckets are assumed pre-provisioned.

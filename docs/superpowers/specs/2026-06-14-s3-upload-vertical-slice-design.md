@@ -59,7 +59,7 @@ pages/ components/        → UI (Upload, History, Nav)
 server/api/uploads/       → HTTP edge: validation, instantiate concretes, call app services
 server/application/uploads/ → app services + port interfaces (no infra imports)
 server/domain/uploads/    → Upload entity + UploadStatus (pure, no I/O)
-server/infrastructure/    → S3Storage (AWS SDK), UploadRepository (Prisma)
+server/infrastructure/    → S3Storage (Bun S3 client), UploadRepository (Prisma)
 ```
 
 ### Domain (`server/domain/uploads/`)
@@ -106,10 +106,13 @@ interface IUploadRepository {
 
 ### Infrastructure (`server/infrastructure/`)
 
-- `storage/S3Storage.ts` implements `IUploadStorage` using `@aws-sdk/client-s3`
-  (`PutObjectCommand`). Reads endpoint/region/bucket/credentials from runtime config.
-  Lazily ensures the bucket exists (`CreateBucket`, ignore "already exists") to support a
-  fresh LocalStack. Same code path talks to real AWS in prod (empty endpoint).
+- `storage/S3Storage.ts` implements `IUploadStorage` using **Bun's built-in S3 client**
+  (`import { S3Client } from 'bun'`) — no `@aws-sdk/*` dependency. Constructed with
+  endpoint/region/bucket/credentials passed in from the API edge; `putObject` writes via
+  `client.write(key, bytes, { type })`. Path-style addressing is Bun's default
+  (`virtualHostedStyle` left off), which LocalStack requires; the same code talks to real
+  AWS in prod (empty endpoint). Bun's S3 client has **no bucket-management API**, so bucket
+  provisioning lives outside the app (see Local dev and Testing).
 - `repositories/UploadRepository.ts` implements `IUploadRepository` via Prisma, mapping
   Prisma rows ↔ `Upload` entities. Never leaks raw Prisma types upward.
 
@@ -123,7 +126,7 @@ interface IUploadRepository {
 
 ```prisma
 model Upload {
-  id               String   @id @default(uuid(7))
+  id               String   @id
   originalFilename String
   objectKey        String
   status           String
@@ -133,7 +136,8 @@ model Upload {
 }
 ```
 
-All prior models removed.
+All prior models removed. `id` has no DB default — the application generates a `uuidv7`
+(`Bun.randomUUIDv7()`) at the API edge and passes it down.
 
 ## S3 layout & configuration
 
@@ -145,7 +149,7 @@ All prior models removed.
 - `s3Bucket` (default `koh-tao-raw`)
 - `s3Prefix` (default `uploads`)
 - `awsRegion` (default `eu-west-1`)
-- `s3Endpoint` — LocalStack URL in dev, empty in prod (SDK uses real AWS)
+- `s3Endpoint` — LocalStack URL in dev, empty in prod (Bun's S3 client then targets real AWS)
 - `awsAccessKeyId` / `awsSecretAccessKey` — `test`/`test` for LocalStack, real creds in prod
 
 Under Aspire these are injected automatically; `.env.example` documents the standalone path.
@@ -171,11 +175,12 @@ Plain Nuxt pages + Tailwind, matching the surviving `app.vue` shell. No auth/gua
   `awsAccessKeyId`/`awsSecretAccessKey`, `s3Bucket`, `s3Prefix`.
 - Postgres unchanged.
 
-Bucket bootstrap: **app-side** — `S3Storage` ensures the bucket lazily on first use
-(`CreateBucket`, tolerate "already exists"). No extra init container; identical for any
-S3 endpoint.
+Bucket bootstrap: Bun's S3 client cannot create buckets, so the dev bucket is provisioned
+in `scripts/aspire-dev.ts` before `nuxt dev` — a raw idempotent `PUT ${endpoint}/${bucket}`
+against LocalStack (which accepts it), guarded to run only when `NUXT_S3_ENDPOINT` is set.
+Production buckets are assumed pre-provisioned (buckets aren't created at runtime in prod).
 
-`scripts/aspire-dev.ts` keeps Prisma sync + Nuxt dev (bucket-ensure handled app-side).
+`scripts/aspire-dev.ts` flow: Prisma generate + `db push` → ensure-bucket (dev only) → Nuxt dev.
 
 ## Testing
 
@@ -185,8 +190,10 @@ Mirrors `test/{domain,integration,smoke}`:
 - **Application unit** — `createUpload` with in-memory fake `IUploadStorage` +
   `IUploadRepository`: row saved `pending` first; `stored` on success; `failed` + rethrow
   when storage throws.
-- **Integration** (Docker) — `POST /api/uploads` then `GET /api/uploads` against real
-  Prisma/Postgres + LocalStack: object lands in the bucket, history row shows `stored`.
+- **Integration** (Docker) — boots Postgres + LocalStack, creates the bucket, then drives
+  `createUpload` / `listUploads` through the real `S3Storage` + `UploadRepository`: the
+  object lands in the bucket (read back via Bun's S3 client) and the history row shows
+  `stored`.
 - **Smoke** — update app-shell/aspire smoke tests for new nav/pages; remove obsolete
   audit/env-example/Auth0 smoke tests.
 
@@ -195,7 +202,7 @@ Mirrors `test/{domain,integration,smoke}`:
 - S3 put fails → upload persisted as `failed`, API returns an error (5xx), upload page
   shows the failure; history still shows the `failed` row.
 - Zod validation (missing file, empty filename, oversized) → `400` before domain/S3 work.
-- Bucket-ensure tolerates "already exists."
+- Dev bucket bootstrap is idempotent (the `PUT` tolerates an already-existing bucket).
 - No file / multiple files → rejected at the API edge.
 
 ## Open questions
