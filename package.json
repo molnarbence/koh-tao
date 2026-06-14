@@ -27,6 +27,7 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@testcontainers/minio": "11.14.0",
     "prisma": "^7",
     "testcontainers": "^11.14.0",
     "typescript": "^5.6.3"

@@ -1,12 +1,15 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test'
 import { $, S3Client } from 'bun'
 import { GenericContainer, Wait, type StartedTestContainer } from 'testcontainers'
+import { MinioContainer, type StartedMinioContainer } from '@testcontainers/minio'
 
 let postgres: StartedTestContainer
-let localstack: StartedTestContainer
+let minio: StartedMinioContainer
 let s3Endpoint = ''
 const bucket = 'koh-tao-raw'
 const prefix = 'uploads'
+const accessKeyId = 'minioadmin'
+const secretAccessKey = 'minioadmin'
 
 beforeAll(async () => {
   postgres = await new GenericContainer('postgres:18')
@@ -15,28 +18,28 @@ beforeAll(async () => {
     .withWaitStrategy(Wait.forLogMessage(/database system is ready to accept connections/, 1))
     .start()
 
-  localstack = await new GenericContainer('localstack/localstack')
-    .withEnvironment({
-      SERVICES: 's3',
-      LOCALSTACK_AUTH_TOKEN: process.env.LOCALSTACK_AUTH_TOKEN ?? ''
-    })
-    .withExposedPorts(4566)
-    .withWaitStrategy(Wait.forLogMessage(/Ready\./, 1))
+  minio = await new MinioContainer('minio/minio:latest')
+    .withUsername(accessKeyId)
+    .withPassword(secretAccessKey)
     .start()
 
-  const dbUrl = `postgresql://test:test@${postgres.getHost()}:${postgres.getMappedPort(5432)}/test`
-  s3Endpoint = `http://${localstack.getHost()}:${localstack.getMappedPort(4566)}`
+  s3Endpoint = minio.getConnectionUrl()
 
+  // MinIO enforces signed auth, so create the bucket with the bundled mc client rather
+  // than an unsigned PUT. We shell out via `docker exec` instead of the container's
+  // exec() helper, which hangs under Bun. (localhost:9000 in the container is MinIO.)
+  const containerId = minio.getId()
+  await $`docker exec ${containerId} mc alias set local http://localhost:9000 ${accessKeyId} ${secretAccessKey}`.quiet()
+  await $`docker exec ${containerId} mc mb --ignore-existing local/${bucket}`.quiet()
+
+  const dbUrl = `postgresql://test:test@${postgres.getHost()}:${postgres.getMappedPort(5432)}/test`
   process.env.DATABASE_URL = dbUrl
   await $`bunx prisma db push`.env({ ...process.env, DATABASE_URL: dbUrl })
-
-  // create the bucket — Bun's S3 client cannot, so use an idempotent path-style PUT
-  await fetch(`${s3Endpoint}/${bucket}`, { method: 'PUT' })
 }, 180000)
 
 afterAll(async () => {
   await postgres?.stop()
-  await localstack?.stop()
+  await minio?.stop()
 })
 
 test('upload stores the object and records a stored history row', async () => {
@@ -47,10 +50,10 @@ test('upload stores the object and records a stored history row', async () => {
 
   const storage = new S3Storage({
     endpoint: s3Endpoint,
-    region: 'eu-west-1',
+    region: 'us-east-1',
     bucket,
-    accessKeyId: 'test',
-    secretAccessKey: 'test'
+    accessKeyId,
+    secretAccessKey
   })
   const repo = new UploadRepository()
 
@@ -64,11 +67,11 @@ test('upload stores the object and records a stored history row', async () => {
 
   // object physically exists in the bucket (read it back via Bun's S3 client)
   const client = new S3Client({
-    region: 'eu-west-1',
     endpoint: s3Endpoint,
+    region: 'us-east-1',
     bucket,
-    accessKeyId: 'test',
-    secretAccessKey: 'test'
+    accessKeyId,
+    secretAccessKey
   })
   expect(await client.file(upload.objectKey).text()).toBe('a,b,c')
 
