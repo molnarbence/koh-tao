@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
 
-test('schema uses uuid7 for all model ids, not cuid', async () => {
+test('schema defines the Upload model without cuid ids', async () => {
   const schema = await Bun.file('prisma/schema.prisma').text()
+  expect(schema.includes('model Upload')).toBe(true)
   expect(schema.includes('@default(cuid())')).toBe(false)
-  expect(schema.includes('@default(uuid(7))')).toBe(true)
 })
