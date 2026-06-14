@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { createUpload } from '../../application/uploads/createUpload'
+import { StorageError } from '../../application/uploads/errors'
 import { S3Storage } from '../../infrastructure/storage/S3Storage'
 import { UploadRepository } from '../../infrastructure/repositories/UploadRepository'
 
@@ -54,7 +55,10 @@ export default defineEventHandler(async (event) => {
       repo
     )
     return { id: upload.id, originalFilename: upload.originalFilename, status: upload.status }
-  } catch {
-    throw createError({ statusCode: 502, statusMessage: 'Upload to storage failed' })
+  } catch (error) {
+    if (error instanceof StorageError) {
+      throw createError({ statusCode: 502, statusMessage: 'Upload to storage failed' })
+    }
+    throw error
   }
 })

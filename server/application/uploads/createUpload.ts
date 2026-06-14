@@ -1,4 +1,5 @@
 import { Upload } from '../../domain/uploads/Upload'
+import { StorageError } from './errors'
 import type { IUploadStorage, IUploadRepository } from './ports'
 
 type CreateUploadInput = {
@@ -24,7 +25,7 @@ export async function createUpload(
   } catch (error) {
     upload.markFailed()
     await repo.setStatus(upload.id, 'failed')
-    throw error
+    throw new StorageError('Failed to store upload object', { cause: error })
   }
 
   upload.markStored()
