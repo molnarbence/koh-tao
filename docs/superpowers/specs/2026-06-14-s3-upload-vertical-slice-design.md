@@ -22,7 +22,7 @@ violation in `CreateManualUpload.ts` (which imported infrastructure and instanti
 - Persist one upload-history record per upload, with a status lifecycle.
 - A history page listing past uploads with their status.
 - Persistent navigation between the two pages.
-- Local development against an S3-compatible LocalStack container via Aspire.
+- Local development against an S3-compatible MinIO container via Aspire.
 
 ### Out of scope
 - Authentication / authorization (explicitly removed).
@@ -110,7 +110,7 @@ interface IUploadRepository {
   (`import { S3Client } from 'bun'`) — no `@aws-sdk/*` dependency. Constructed with
   endpoint/region/bucket/credentials passed in from the API edge; `putObject` writes via
   `client.write(key, bytes, { type })`. Path-style addressing is Bun's default
-  (`virtualHostedStyle` left off), which LocalStack requires; the same code talks to real
+  (`virtualHostedStyle` left off), which MinIO requires; the same code talks to real
   AWS in prod (empty endpoint). Bun's S3 client has **no bucket-management API**, so bucket
   provisioning lives outside the app (see Local dev and Testing).
 - `repositories/UploadRepository.ts` implements `IUploadRepository` via Prisma, mapping
@@ -149,8 +149,9 @@ All prior models removed. `id` has no DB default — the application generates a
 - `s3Bucket` (default `koh-tao-raw`)
 - `s3Prefix` (default `uploads`)
 - `awsRegion` (default `eu-west-1`)
-- `s3Endpoint` — LocalStack URL in dev, empty in prod (Bun's S3 client then targets real AWS)
-- `awsAccessKeyId` / `awsSecretAccessKey` — `test`/`test` for LocalStack, real creds in prod
+- `s3Endpoint` — MinIO URL in dev, empty in prod (Bun's S3 client then targets real AWS)
+- `awsAccessKeyId` / `awsSecretAccessKey` — `minioadmin`/`minioadmin` for MinIO dev, real creds in prod
+  (dev `awsRegion` is `us-east-1` to match MinIO's default signing region)
 
 Under Aspire these are injected automatically; `.env.example` documents the standalone path.
 
@@ -167,20 +168,24 @@ Plain Nuxt pages + Tailwind, matching the surviving `app.vue` shell. No auth/gua
   `GET /api/uploads`, table of filename / status badge (green `stored`, red `failed`,
   grey `pending`) / uploaded-at, newest first, with an empty state.
 
-## Local dev (Aspire + LocalStack)
+## Local dev (Aspire + MinIO)
 
 `apphost.cs`:
-- Add LocalStack container (`localstack/localstack`), edge port `4566`, `SERVICES=s3`.
-- Bun app `.WithReference(localstack)` + env: `s3Endpoint`, `awsRegion`, dummy
-  `awsAccessKeyId`/`awsSecretAccessKey`, `s3Bucket`, `s3Prefix`.
+- Add a MinIO container (`minio/minio`, fixed name `koh-tao-minio`, `server --console-address
+  :9001 /data`), API port `9000` + console `9001`, root user/password `minioadmin`.
+- Bun app `.WaitFor(minio)` + env: `NUXT_S3_ENDPOINT` (MinIO API endpoint), `NUXT_AWS_REGION`
+  (`us-east-1`), `NUXT_AWS_ACCESS_KEY_ID`/`NUXT_AWS_SECRET_ACCESS_KEY` (`minioadmin`),
+  `NUXT_S3_BUCKET`, `NUXT_S3_PREFIX`.
 - Postgres unchanged.
 
-Bucket bootstrap: Bun's S3 client cannot create buckets, so the dev bucket is provisioned
-in `scripts/aspire-dev.ts` before `nuxt dev` — a raw idempotent `PUT ${endpoint}/${bucket}`
-against LocalStack (which accepts it), guarded to run only when `NUXT_S3_ENDPOINT` is set.
+Bucket bootstrap: Bun's S3 client cannot create buckets and MinIO rejects unsigned PUTs, so
+the dev bucket is created in `scripts/aspire-dev.ts` via the `mc` client bundled in the MinIO
+container — `docker exec koh-tao-minio mc mb --ignore-existing local/<bucket>` (with an
+alias+retry loop for readiness), guarded to run only when `NUXT_S3_BUCKET` is set.
 Production buckets are assumed pre-provisioned (buckets aren't created at runtime in prod).
 
-`scripts/aspire-dev.ts` flow: Prisma generate + `db push` → ensure-bucket (dev only) → Nuxt dev.
+`scripts/aspire-dev.ts` flow: Prisma generate + `bunx prisma db push` → create-bucket (dev
+only, via `mc`) → Nuxt dev.
 
 ## Testing
 
@@ -190,19 +195,22 @@ Mirrors `test/{domain,integration,smoke}`:
 - **Application unit** — `createUpload` with in-memory fake `IUploadStorage` +
   `IUploadRepository`: row saved `pending` first; `stored` on success; `failed` + rethrow
   when storage throws.
-- **Integration** (Docker) — boots Postgres + LocalStack, creates the bucket, then drives
-  `createUpload` / `listUploads` through the real `S3Storage` + `UploadRepository`: the
-  object lands in the bucket (read back via Bun's S3 client) and the history row shows
-  `stored`.
+- **Integration** (Docker) — boots Postgres + MinIO (via `@testcontainers/minio`), creates
+  the bucket with `mc` (run through `docker exec`, since testcontainers' `exec()` hangs under
+  Bun), then drives `createUpload` / `listUploads` through the real `S3Storage` +
+  `UploadRepository`: the object lands in the bucket (read back via Bun's S3 client) and the
+  history row shows `stored`.
 - **Smoke** — update app-shell/aspire smoke tests for new nav/pages; remove obsolete
   audit/env-example/Auth0 smoke tests.
 
 ## Error handling
 
-- S3 put fails → upload persisted as `failed`, API returns an error (5xx), upload page
-  shows the failure; history still shows the `failed` row.
+- S3 put fails → upload persisted as `failed`; the application throws a typed
+  `StorageError` (wrapping the cause), which the API maps to `502`. Other failures (e.g.
+  database down) are not disguised as storage errors — they surface as `500`. The upload
+  page shows the failure; history still shows the `failed` row.
 - Zod validation (missing file, empty filename, oversized) → `400` before domain/S3 work.
-- Dev bucket bootstrap is idempotent (the `PUT` tolerates an already-existing bucket).
+- Bucket creation is idempotent (`mc mb --ignore-existing`).
 - No file / multiple files → rejected at the API edge.
 
 ## Open questions

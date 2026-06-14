@@ -4,11 +4,25 @@
 
 **Goal:** Strip the Koh Tao app to its scaffolding and rebuild a single vertical slice that uploads a file to an S3 bucket (no auth, fixed prefix) and records an upload-history entry with a `pending → stored/failed` status.
 
-**Architecture:** DDD layering per the repo's `add-feature` rule — pure `domain/uploads`, an `application/uploads` layer that depends only on port interfaces, `infrastructure` implementations (Bun's native S3 client + Prisma), and thin `api/uploads` routes that wire concretes. Local dev runs against a LocalStack S3 container added to the Aspire apphost; Postgres survives for the history table only.
+**Architecture:** DDD layering per the repo's `add-feature` rule — pure `domain/uploads`, an `application/uploads` layer that depends only on port interfaces, `infrastructure` implementations (Bun's native S3 client + Prisma), and thin `api/uploads` routes that wire concretes. Local dev runs against a MinIO S3 container added to the Aspire apphost; Postgres survives for the history table only.
 
-**Tech Stack:** Nuxt 4, Bun (test runner + runtime + built-in `S3Client`), Prisma 7 (+ `@prisma/adapter-pg`), PostgreSQL 18, LocalStack, Aspire, Tailwind, Zod, `bun:test`, testcontainers. No `@aws-sdk/*` dependency — S3 access uses Bun's built-in client.
+**Tech Stack:** Nuxt 4, Bun (test runner + runtime + built-in `S3Client`), Prisma 7 (+ `@prisma/adapter-pg`), PostgreSQL 18, MinIO (`@testcontainers/minio`), Aspire, Tailwind, Zod, `bun:test`, testcontainers. No `@aws-sdk/*` dependency — S3 access uses Bun's built-in client.
 
 **Spec:** `docs/superpowers/specs/2026-06-14-s3-upload-vertical-slice-design.md`
+
+## Post-execution deltas
+
+The plan below is preserved as written. The shipped implementation diverged in these ways (the committed code is the source of truth):
+
+- **MinIO instead of LocalStack** for the S3 emulator, in both the integration test and the Aspire apphost. The local `localstack:latest` image was a licensed pro variant (needed a token); MinIO is open-source and tokenless. Tasks 13–14 below describe the LocalStack approach; the shipped versions use MinIO.
+- **Integration test** uses `@testcontainers/minio` (`MinioContainer`). Bucket creation uses the `mc` client bundled in the MinIO container, invoked via `docker exec <containerId>` — **not** testcontainers' `container.exec()`, which hangs under Bun. The unsigned `PUT` bucket bootstrap from the plan does not work against MinIO (it enforces SigV4); removed. Test region is `us-east-1` (MinIO default), creds `minioadmin`/`minioadmin`.
+- **Aspire dev** (`apphost.cs`) runs a `minio/minio` container named `koh-tao-minio`; `scripts/aspire-dev.ts` creates the bucket via `docker exec koh-tao-minio mc mb` with a readiness retry loop. (Unverified — `aspire start` was not run in the execution environment.)
+- **`createUpload` failure mapping:** the application throws a typed `StorageError` (`server/application/uploads/errors.ts`) wrapping the S3 cause; the POST route maps only `StorageError` → `502` and lets other errors (e.g. DB) surface as `500`. The plan's blanket `catch → 502` was a code-review finding.
+- **`bunx prisma db push`** (not `prisma db push --skip-generate`): `--skip-generate` isn't valid in Prisma 7 and bare `prisma` isn't on the Bun shell PATH.
+- **`nuxt.config.ts` sets `components: [{ path: '~/components', pathPrefix: false }]`** so `components/uploads/UploadForm.vue` resolves as `<UploadForm>` (Nuxt 4's default `pathPrefix: true` would have made it `<UploadsUploadForm>`).
+- **Test-only fix in Task 5:** `FakeRepo` captures status at save-time (`savedStatusAtSave`) because `Upload` is mutable; the plan's `repo.saved[0].status` assertion would read the later-mutated value.
+- **Teardown also removed/updated stale smoke tests** (`operator-pages`, `partner-configuration-pages` deleted; `schema-uuid` updated for the no-`@default` `id`).
+- **Verification note:** `tsc --noEmit` is not a usable gate here (no `@types/bun`, `tsconfig` `types: []`), so `bun test` + `bunx nuxi prepare` are the gates.
 
 **Conventions for the implementer:**
 - Tests use `bun:test` (`import { expect, test } from 'bun:test'`).
@@ -370,8 +384,14 @@ import type { UploadStatus } from '../../../server/domain/uploads/UploadStatus'
 
 class FakeRepo implements IUploadRepository {
   saved: Upload[] = []
+  // Upload is mutable; capture the status at save-time so assertions see what was
+  // persisted then, not the later-mutated value of the shared reference.
+  savedStatusAtSave: UploadStatus[] = []
   statusUpdates: Array<{ id: string; status: UploadStatus }> = []
-  async save(upload: Upload) { this.saved.push(upload) }
+  async save(upload: Upload) {
+    this.saved.push(upload)
+    this.savedStatusAtSave.push(upload.status)
+  }
   async setStatus(id: string, status: UploadStatus) { this.statusUpdates.push({ id, status }) }
   async list() { return this.saved }
 }
@@ -395,7 +415,7 @@ test('persists pending first, stores object, then marks stored', async () => {
     repo
   )
 
-  expect(repo.saved[0].status).toBe('pending')
+  expect(repo.savedStatusAtSave[0]).toBe('pending')
   expect(storage.puts[0].key).toBe('uploads/u_1/data.csv')
   expect(repo.statusUpdates).toEqual([{ id: 'u_1', status: 'stored' }])
   expect(upload.status).toBe('stored')
@@ -410,7 +430,7 @@ test('marks failed and rethrows when storage throws', async () => {
     createUpload({ id: 'u_2', originalFilename: 'data.csv', file: new ArrayBuffer(4), prefix: 'uploads' }, storage, repo)
   ).rejects.toThrow('s3 down')
 
-  expect(repo.saved[0].status).toBe('failed')
+  expect(repo.savedStatusAtSave[0]).toBe('pending')
   expect(repo.statusUpdates).toEqual([{ id: 'u_2', status: 'failed' }])
 })
 ```
