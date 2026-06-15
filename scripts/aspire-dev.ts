@@ -17,4 +17,6 @@ if (bucket) {
   }
 }
 
-await $`nuxt dev`
+// Run Nuxt under Bun (`--bun`) so the Nitro server uses the Bun runtime; otherwise the
+// `nuxt` shebang runs it under Node, where `import { S3Client } from 'bun'` cannot resolve.
+await $`bun --bun nuxt dev`

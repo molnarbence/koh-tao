@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "nuxt dev",
+    "dev": "bun --bun nuxt dev",
     "build": "nuxt build",
     "preview": "nuxt preview",
     "test": "bun test",

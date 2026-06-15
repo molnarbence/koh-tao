@@ -19,7 +19,7 @@ export class S3Storage implements IUploadStorage {
       bucket: config.bucket,
       accessKeyId: config.accessKeyId,
       secretAccessKey: config.secretAccessKey
-      // virtualHostedStyle left default (false) → path-style, required by LocalStack
+      // virtualHostedStyle left default (false) → path-style, required by MinIO/LocalStack
     })
   }
 
