@@ -1,4 +1,4 @@
-import { UploadStatus, assertTransition } from './UploadStatus'
+import { type UploadStatus, assertTransition } from './UploadStatus'
 
 type CreateUploadInput = {
   id: string

@@ -37,10 +37,12 @@ export default defineEventHandler(async (event) => {
   })
   const repo = new UploadRepository()
 
+  // Node Buffer's underlying .buffer is always an ArrayBuffer (never SharedArrayBuffer);
+  // slice the file's region into a standalone copy and assert the concrete type.
   const body = filePart.data.buffer.slice(
     filePart.data.byteOffset,
     filePart.data.byteOffset + filePart.data.byteLength
-  )
+  ) as ArrayBuffer
 
   try {
     const upload = await createUpload(

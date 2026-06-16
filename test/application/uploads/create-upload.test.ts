@@ -39,7 +39,7 @@ test('persists pending first, stores object, then marks stored', async () => {
   )
 
   expect(repo.savedStatusAtSave[0]).toBe('pending')
-  expect(storage.puts[0].key).toBe('uploads/u_1/data.csv')
+  expect(storage.puts[0]!.key).toBe('uploads/u_1/data.csv')
   expect(repo.statusUpdates).toEqual([{ id: 'u_1', status: 'stored' }])
   expect(upload.status).toBe('stored')
 })

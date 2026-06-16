@@ -18,5 +18,5 @@ test('returns the uploads from the repository', async () => {
   })
   const result = await listUploads(new FakeRepo([upload]))
   expect(result).toHaveLength(1)
-  expect(result[0].id).toBe('u_1')
+  expect(result[0]!.id).toBe('u_1')
 })
