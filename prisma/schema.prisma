@@ -6,92 +6,12 @@ datasource db {
   provider = "postgresql"
 }
 
-model Partner {
-  id          String             @id @default(uuid(7))
-  name        String
-  createdAt   DateTime           @default(now())
-  updatedAt   DateTime           @updatedAt
-  channels    IngestionChannel[]
-  ingestions  Ingestion[]
-}
+model Upload {
+  id               String   @id
+  originalFilename String
+  objectKey        String
+  status           String
+  createdAt        DateTime @default(now())
 
-model IngestionChannel {
-  id          String      @id @default(uuid(7))
-  partnerId   String
-  channelType String
-  isActive    Boolean     @default(false)
-  partner     Partner     @relation(fields: [partnerId], references: [id])
-  ingestions  Ingestion[]
-}
-
-model MediationBlueprint {
-  id                 String   @id @default(uuid(7))
-  name               String
-  functionIdentifier String
-  parameterSchema    Json
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
-}
-
-model Ingestion {
-  id                            String               @id @default(uuid(7))
-  partnerId                     String
-  ingestionChannelId            String
-  billingPeriodStart            DateTime
-  status                        String
-  sourceType                    String
-  sourceObjectKey               String?
-  sourceObjectVersionIdentifier String?
-  originalFilename              String
-  createdAt                     DateTime             @default(now())
-  updatedAt                     DateTime             @updatedAt
-  partner                       Partner              @relation(fields: [partnerId], references: [id])
-  channel                       IngestionChannel     @relation(fields: [ingestionChannelId], references: [id])
-  executions                    ProcessingExecution[]
-  billingTransfers              BillingTransfer[]
-
-  @@index([partnerId, billingPeriodStart, status, createdAt])
-  @@index([ingestionChannelId])
-}
-
-model ProcessingExecution {
-  id           String    @id @default(uuid(7))
-  ingestionId  String
-  stage        String
-  status       String
-  startedAt    DateTime?
-  endedAt      DateTime?
-  errorSummary String?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-  ingestion    Ingestion @relation(fields: [ingestionId], references: [id])
-
-  @@index([ingestionId, startedAt(sort: Desc)])
-}
-
-model BillingTransfer {
-  id               String    @id @default(uuid(7))
-  ingestionId      String
-  billingReference String?
-  billingStatus    String
-  polledAt         DateTime?
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
-  ingestion        Ingestion @relation(fields: [ingestionId], references: [id])
-
-  @@index([ingestionId])
-}
-
-model AuditEvent {
-  id         String   @id @default(uuid(7))
-  targetType String
-  targetId   String
-  eventType  String
-  actorType  String
-  actorId    String
-  payload    Json
-  createdAt  DateTime @default(now())
-
-  @@index([targetId, createdAt])
-  @@index([actorId, createdAt])
+  @@index([createdAt(sort: Desc)])
 }
